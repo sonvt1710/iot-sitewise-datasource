@@ -3,15 +3,20 @@ package fields
 import (
 	"github.com/aws/aws-sdk-go/service/iotsitewise"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	"github.com/grafana/iot-sitewise-datasource/pkg/util"
 )
 
 func FieldTypeForPropertyValue(property *iotsitewise.DescribeAssetPropertyOutput) data.FieldType {
-	switch *property.AssetProperty.DataType {
+	dataType := util.GetPropertyDataType(property)
+
+	switch dataType {
 	case "BOOLEAN":
 		return data.FieldTypeBool
 	case "INTEGER":
 		return data.FieldTypeInt64
 	case "STRING":
+		return data.FieldTypeString
+	case "STRUCT":
 		return data.FieldTypeString
 	default:
 		return data.FieldTypeFloat64
@@ -19,9 +24,12 @@ func FieldTypeForPropertyValue(property *iotsitewise.DescribeAssetPropertyOutput
 }
 
 // Map values from ???:
-//   https://docs.microsoft.com/en-us/rest/api/monitor/metrics/list#unit
+//
+//	https://docs.microsoft.com/en-us/rest/api/monitor/metrics/list#unit
+//
 // to
-//   https://github.com/grafana/grafana/blob/master/packages/grafana-data/src/valueFormats/categories.ts#L24
+//
+//	https://github.com/grafana/grafana/blob/master/packages/grafana-data/src/valueFormats/categories.ts#L24
 func ToGrafanaUnit(unit *string) string {
 	if unit == nil {
 		return ""

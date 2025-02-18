@@ -2,9 +2,7 @@ package testdata
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/grafana/iot-sitewise-datasource/pkg/framer"
@@ -21,9 +19,6 @@ func SerializeStruct(t *testing.T, val interface{}) []byte {
 }
 
 func UnmarshalFileContents(path string, val interface{}) error {
-	cwd, _ := os.Getwd()
-	fmt.Println(cwd)
-
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		return err
@@ -141,6 +136,15 @@ func GetIoTSitewiseAssetModelDescription(t *testing.T, path string) iotsitewise.
 		t.Fatal(err)
 	}
 	return assets
+}
+
+func GetIoTSitewiseAssetProperties(t *testing.T, path string) iotsitewise.ListAssetPropertiesOutput {
+	assetProperties := iotsitewise.ListAssetPropertiesOutput{}
+	err := UnmarshalFileContents(path, &assetProperties)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return assetProperties
 }
 
 func GetIoTSitewiseTimeSeries(t *testing.T, path string) iotsitewise.DescribeTimeSeriesOutput {

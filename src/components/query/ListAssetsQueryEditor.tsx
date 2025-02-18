@@ -1,12 +1,10 @@
 import React, { PureComponent } from 'react';
 import { DataFrameView, SelectableValue } from '@grafana/data';
 import { ListAssetsQuery } from 'types';
-import { InlineField, Select } from '@grafana/ui';
+import { Select } from '@grafana/ui';
 import { SitewiseQueryEditorProps } from './types';
 import { AssetModelSummary } from 'queryResponseTypes';
-import { firstLabelWith } from './QueryEditor';
-
-type Props = SitewiseQueryEditorProps<ListAssetsQuery>;
+import { EditorField, EditorFieldGroup, EditorRow } from '@grafana/plugin-ui';
 
 interface State {
   models?: DataFrameView<AssetModelSummary>;
@@ -21,7 +19,7 @@ const filters = [
   { label: 'All', value: 'ALL', description: 'The list includes all assets for a given asset model ID' },
 ];
 
-export class ListAssetsQueryEditor extends PureComponent<Props, State> {
+export class ListAssetsQueryEditor extends PureComponent<SitewiseQueryEditorProps<ListAssetsQuery>, State> {
   state: State = {};
 
   async componentDidMount() {
@@ -32,15 +30,13 @@ export class ListAssetsQueryEditor extends PureComponent<Props, State> {
   }
 
   onAssetModelIdChange = (sel: SelectableValue<string>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, modelId: sel.value! });
-    onRunQuery();
   };
 
   onFilterChange = (sel: SelectableValue<string>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, filter: sel.value as 'ALL' | 'TOP_LEVEL' });
-    onRunQuery();
   };
 
   render() {
@@ -63,10 +59,12 @@ export class ListAssetsQueryEditor extends PureComponent<Props, State> {
     }
 
     return (
-      <>
-        <div className="gf-form">
-          <InlineField label="Model ID" labelWidth={firstLabelWith} grow={true}>
+      <EditorRow>
+        <EditorFieldGroup>
+          <EditorField label="Model ID" htmlFor="model" width={30}>
             <Select
+              id="model"
+              aria-label="Model ID"
               isLoading={!models}
               options={modelIds}
               value={currentModel}
@@ -76,22 +74,22 @@ export class ListAssetsQueryEditor extends PureComponent<Props, State> {
               isClearable={true}
               isSearchable={true}
               formatCreateLabel={(txt) => `Model ID: ${txt}`}
-              menuPlacement="bottom"
+              menuPlacement="auto"
             />
-          </InlineField>
-        </div>
-        <div className="gf-form">
-          <InlineField label="Filter" labelWidth={firstLabelWith} grow={true}>
+          </EditorField>
+          <EditorField label="Filter" htmlFor="filter" width={20}>
             <Select
+              id="filter"
+              aria-label="Filter"
               options={filters}
               value={filters.find((v) => v.value === query.filter) || filters[0]}
               onChange={this.onFilterChange}
               placeholder="Select a property"
-              menuPlacement="bottom"
+              menuPlacement="auto"
             />
-          </InlineField>
-        </div>
-      </>
+          </EditorField>
+        </EditorFieldGroup>
+      </EditorRow>
     );
   }
 }

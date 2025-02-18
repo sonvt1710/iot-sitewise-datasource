@@ -17,7 +17,7 @@
       "name": "Grafana Labs",
       "url": "https://grafana.com"
     },
-    "keywords": ["datasource", "iot", "aws"],
+    "keywords": ["datasource", "sitewise", "iot", "aws", "amazon", "cloud provider"],
     "logos": {
       "small": "img/sitewise.svg",
       "large": "img/sitewise.svg"
@@ -37,8 +37,7 @@
     "updated": "%TODAY%"
   },
   "dependencies": {
-    "grafanaDependency": ">=8.5.0",
-    "grafanaVersion": "8.5.0",
+    "grafanaDependency": ">=10.3.0",
     "plugins": []
   }
 }

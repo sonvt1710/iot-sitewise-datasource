@@ -16,6 +16,8 @@ const (
 	QueryTypeListAssociatedAssets = "ListAssociatedAssets"
 	QueryTypeDescribeAsset        = "DescribeAsset"
 	QueryTypeDescribeAssetModel   = "DescribeAssetModel"
+	QueryTypeListAssetProperties  = "ListAssetProperties"
+	QueryTypeListTimeSeries       = "ListTimeSeries"
 )
 
 const (
@@ -30,13 +32,14 @@ const (
 type BaseQuery struct {
 	AwsRegion string `json:"region,omitempty"`
 	// Deprecated: use assetIds
-	AssetId             string   `json:"assetId,omitempty"`
-	AssetIds            []string `json:"assetIds,omitempty"`
-	PropertyId          string   `json:"propertyId,omitempty"`
-	PropertyAlias       string   `json:"propertyAlias,omitempty"`
-	NextToken           string   `json:"nextToken,omitempty"`
-	MaxPageAggregations int      `json:"maxPageAggregations,omitempty"`
-	ResponseFormat      string   `json:"responseFormat,omitempty"`
+	AssetId             string            `json:"assetId,omitempty"`
+	AssetIds            []string          `json:"assetIds,omitempty"`
+	PropertyId          string            `json:"propertyId,omitempty"`
+	PropertyAlias       string            `json:"propertyAlias,omitempty"`
+	NextToken           string            `json:"nextToken,omitempty"`
+	NextTokens          map[string]string `json:"nextTokens,omitempty"`
+	MaxPageAggregations int               `json:"maxPageAggregations,omitempty"`
+	ResponseFormat      string            `json:"responseFormat,omitempty"`
 
 	Interval      time.Duration     `json:"-"`
 	TimeRange     backend.TimeRange `json:"-"`

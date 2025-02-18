@@ -62,12 +62,14 @@ func getQueryHandlers(s *Server) *datasource.QueryTypeMux {
 	mux.HandleFunc(models.QueryTypeListAssociatedAssets, s.HandleListAssociatedAssets)
 	mux.HandleFunc(models.QueryTypeListAssets, s.HandleListAssets)
 	mux.HandleFunc(models.QueryTypeDescribeAsset, s.HandleDescribeAsset)
+	mux.HandleFunc(models.QueryTypeListAssetProperties, s.HandleListAssetProperties)
+	mux.HandleFunc(models.QueryTypeListTimeSeries, s.HandleListTimeSeries)
 
 	return mux
 }
 
-func NewServerInstance(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	ds, err := sitewise.NewDatasource(settings)
+func NewServerInstance(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	ds, err := sitewise.NewDatasource(ctx, settings)
 	if err != nil {
 		return nil, err
 	}

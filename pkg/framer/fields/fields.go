@@ -4,6 +4,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/iotsitewise"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/iot-sitewise-datasource/pkg/models"
+	"github.com/grafana/iot-sitewise-datasource/pkg/util"
 )
 
 func NewFieldWithName(name string, fieldType data.FieldType, length int) *data.Field {
@@ -70,7 +71,9 @@ func CompositeModelsField(length int) *data.Field {
 }
 
 func PropertyValueField(property *iotsitewise.DescribeAssetPropertyOutput, length int) *data.Field {
-	return PropertyValueFieldNamed(*property.AssetProperty.Name, property, length)
+	propertyName := util.GetPropertyName(property)
+
+	return PropertyValueFieldNamed(propertyName, property, length)
 }
 
 func PropertyValueFieldForQuery(query models.AssetPropertyValueQuery, property *iotsitewise.DescribeAssetPropertyOutput, length int) *data.Field {
@@ -82,13 +85,70 @@ func PropertyValueFieldForQuery(query models.AssetPropertyValueQuery, property *
 }
 
 func PropertyValueFieldNamed(name string, property *iotsitewise.DescribeAssetPropertyOutput, length int) *data.Field {
+	unit := util.GetPropertyUnit(property)
+
 	valueField := NewFieldWithName(name, FieldTypeForPropertyValue(property), length)
 	valueField.Config = &data.FieldConfig{
-		Unit: ToGrafanaUnit(property.AssetProperty.Unit),
+		Unit: ToGrafanaUnit(&unit),
 	}
+
 	return valueField
+}
+
+func DatumField(length int, col iotsitewise.ColumnInfo) *data.Field {
+	return NewFieldWithName(*col.Name, FieldTypeForQueryResult(col), length)
 }
 
 func AggregationField(length int, name string) *data.Field {
 	return NewFieldWithName(name, data.FieldTypeFloat64, length)
+}
+
+func AnomalyScoreField(length int) *data.Field {
+	return NewFieldWithName(AnomalyScore, data.FieldTypeFloat64, length)
+}
+
+func PredictionReasonField(length int) *data.Field {
+	return NewFieldWithName(PredictionReason, data.FieldTypeString, length)
+}
+
+func DiagnosticField(length int, assetId string) *data.Field {
+	return NewFieldWithName(assetId, data.FieldTypeFloat64, length)
+}
+
+// for time series
+
+func AliasField(length int) *data.Field {
+	return NewFieldWithName(Alias, data.FieldTypeString, length)
+}
+
+func AssetIdField(length int) *data.Field {
+	return NewFieldWithName(AssetId, data.FieldTypeString, length)
+}
+
+func DataTypeField(length int) *data.Field {
+	return NewFieldWithName(DataType, data.FieldTypeString, length)
+}
+
+func DataTypeSpecField(length int) *data.Field {
+	return NewFieldWithName(DataTypeSpec, data.FieldTypeString, length)
+}
+
+func PropertyIdField(length int) *data.Field {
+	return NewFieldWithName(PropertyId, data.FieldTypeString, length)
+}
+
+func TimeSeriesArnField(length int) *data.Field {
+	return NewFieldWithName(TimeSeriesArn, data.FieldTypeString, length)
+}
+
+func TimeSeriesIdField(length int) *data.Field {
+	return NewFieldWithName(TimeSeriesId, data.FieldTypeString, length)
+}
+
+func TimeSeriesCreationDateField(length int) *data.Field {
+	return NewFieldWithName(TimeSeriesCreationDate, data.FieldTypeTime, length)
+}
+
+func TimeSeriesLastUpdateDateField(length int) *data.Field {
+	return NewFieldWithName(TimeSeriesLastUpdateDate, data.FieldTypeTime, length)
 }

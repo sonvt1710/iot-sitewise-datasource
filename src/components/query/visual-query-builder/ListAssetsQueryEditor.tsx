@@ -1,0 +1,88 @@
+import React, { PureComponent } from 'react';
+import { SelectableValue } from '@grafana/data';
+import { ListAssetsQuery } from 'types';
+import { Select } from '@grafana/ui';
+import { SitewiseQueryEditorProps } from './types';
+import { EditorField, EditorFieldGroup, EditorRow } from '@grafana/plugin-ui';
+
+interface State {
+  models?: SelectableValue<string>[];
+}
+
+const filters = [
+  {
+    label: 'Top Level',
+    value: 'TOP_LEVEL',
+    description: 'The list includes only top-level assets in the asset hierarchy tree',
+  },
+  { label: 'All', value: 'ALL', description: 'The list includes all assets for a given asset model ID' },
+];
+
+export class ListAssetsQueryEditor extends PureComponent<SitewiseQueryEditorProps<ListAssetsQuery>, State> {
+  state: State = {};
+
+  async componentDidMount() {
+    const { query } = this.props;
+    const cache = this.props.datasource.getCache(query.region);
+    const models = await cache.getModelsOptions();
+    this.setState({ models });
+  }
+
+  onAssetModelIdChange = (sel: SelectableValue<string>) => {
+    const { onChange, query } = this.props;
+    onChange({ ...query, modelId: sel.value! });
+  };
+
+  onFilterChange = (sel: SelectableValue<string>) => {
+    const { onChange, query } = this.props;
+    onChange({ ...query, filter: sel.value as 'ALL' | 'TOP_LEVEL' });
+  };
+
+  render() {
+    const { query } = this.props;
+    const { models } = this.state;
+
+    let currentModel = models?.find((m) => m.value === query.modelId);
+    if (query.modelId && !currentModel) {
+      currentModel = {
+        value: query.modelId,
+        label: 'Model ID: ' + query.modelId,
+        description: '',
+      };
+    }
+
+    return (
+      <EditorRow>
+        <EditorFieldGroup>
+          <EditorField label="Model ID" htmlFor="model" width={30}>
+            <Select
+              id="model"
+              aria-label="Model ID"
+              isLoading={!models}
+              options={models}
+              value={currentModel}
+              onChange={this.onAssetModelIdChange}
+              placeholder="Select an asset model id"
+              allowCustomValue={true}
+              isClearable={true}
+              isSearchable={true}
+              formatCreateLabel={(txt) => `Model ID: ${txt}`}
+              menuPlacement="auto"
+            />
+          </EditorField>
+          <EditorField label="Filter" htmlFor="filter" width={20}>
+            <Select
+              id="filter"
+              aria-label="Filter"
+              options={filters}
+              value={filters.find((v) => v.value === query.filter) || filters[0]}
+              onChange={this.onFilterChange}
+              placeholder="Select a property"
+              menuPlacement="auto"
+            />
+          </EditorField>
+        </EditorFieldGroup>
+      </EditorRow>
+    );
+  }
+}

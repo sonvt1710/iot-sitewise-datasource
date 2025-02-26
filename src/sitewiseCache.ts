@@ -1,5 +1,5 @@
 import { DataFrameView, SelectableValue } from '@grafana/data';
-import { DataSource } from 'DataSource';
+import { DataSource } from 'SitewiseDataSource';
 import { ListAssetsQuery, ListAssociatedAssetsQuery, QueryType } from 'types';
 import { AssetModelSummary, AssetSummary, DescribeAssetResult } from './queryResponseTypes';
 import { AssetInfo, AssetPropertyInfo } from './types';
@@ -13,10 +13,14 @@ export class SitewiseCache {
   private models?: DataFrameView<AssetModelSummary>;
   private assetsById = new Map<string, AssetInfo>();
   private topLevelAssets?: DataFrameView<AssetSummary>;
+  private assetPropertiesByAssetId = new Map<string, DataFrameView<{ id: string; name: string }>>();
 
-  constructor(private ds: DataSource, private region: string) {}
+  constructor(
+    private ds: DataSource,
+    private region: string
+  ) {}
 
-  async getAssetInfo(id: string): Promise<AssetInfo> {
+  async getAssetInfo(id: string): Promise<AssetInfo | undefined> {
     const v = this.assetsById.get(id);
     if (v) {
       return Promise.resolve(v);
@@ -59,7 +63,37 @@ export class SitewiseCache {
     return this.assetsById.get(id);
   }
 
-  async getModels(): Promise<DataFrameView<AssetModelSummary>> {
+  async listAssetProperties(assetId: string): Promise<DataFrameView<{ id: string; name: string }> | undefined> {
+    const ap = this.assetPropertiesByAssetId.get(assetId);
+
+    if (ap) {
+      return ap;
+    }
+
+    return this.ds
+      .runQuery({
+        refId: 'listAssetProperties',
+        queryType: QueryType.ListAssetProperties,
+        assetId,
+        region: this.region,
+      })
+      .pipe(
+        map((res) => {
+          if (res.data.length) {
+            const assetProperties = new DataFrameView<{ id: string; name: string }>(res.data[0]);
+
+            this.assetPropertiesByAssetId.set(assetId, assetProperties);
+
+            return assetProperties;
+          }
+
+          throw 'asset properties not found';
+        })
+      )
+      .toPromise();
+  }
+
+  async getModels(): Promise<DataFrameView<AssetModelSummary> | undefined> {
     if (this.models) {
       return Promise.resolve(this.models);
     }
@@ -82,8 +116,25 @@ export class SitewiseCache {
       .toPromise();
   }
 
+  async getModelsOptions(): Promise<Array<SelectableValue<string>> | undefined> {
+    const options = getTemplateVariableOptions();
+
+    const models = await this.getModels();
+    if (!models) {
+      return;
+    }
+
+    return options.concat(
+      models.toArray().map((model) => ({
+        label: model.name,
+        value: model.id,
+        description: model.description,
+      }))
+    );
+  }
+
   // No cache for now
-  async getAssetsOfType(modelId: string): Promise<DataFrameView<AssetSummary>> {
+  async getAssetsOfType(modelId: string): Promise<DataFrameView<AssetSummary> | undefined> {
     const query: ListAssetsQuery = {
       refId: 'getAssetsOfType',
       queryType: QueryType.ListAssets,
@@ -105,7 +156,7 @@ export class SitewiseCache {
       .toPromise();
   }
 
-  async getAssociatedAssets(assetId: string, hierarchyId?: string): Promise<DataFrameView<AssetSummary>> {
+  async getAssociatedAssets(assetId: string, hierarchyId?: string): Promise<DataFrameView<AssetSummary> | undefined> {
     const query: ListAssociatedAssetsQuery = {
       queryType: QueryType.ListAssociatedAssets,
       refId: 'associatedAssets',
@@ -128,7 +179,7 @@ export class SitewiseCache {
       .toPromise();
   }
 
-  async getTopLevelAssets(): Promise<DataFrameView<AssetSummary>> {
+  async getTopLevelAssets(): Promise<DataFrameView<AssetSummary> | undefined> {
     if (this.topLevelAssets) {
       return Promise.resolve(this.topLevelAssets);
     }
@@ -153,15 +204,9 @@ export class SitewiseCache {
   }
 
   async getAssetPickerOptions(): Promise<Array<SelectableValue<string>>> {
-    const options: Array<SelectableValue<string>> = getTemplateSrv()
-      .getVariables()
-      .map((variable) => ({
-        label: '${' + (variable.label ?? variable.name) + '}',
-        value: '${' + variable.name + '}',
-        icon: 'arrow-right',
-      }));
+    const options = getTemplateVariableOptions();
     try {
-      const topLevel = await this.getTopLevelAssets();
+      const topLevel = (await this.getTopLevelAssets()) || [];
       for (const asset of topLevel) {
         options.push({
           label: asset.name,
@@ -173,21 +218,22 @@ export class SitewiseCache {
       console.log('Error reading top level assets', err);
     }
 
-    // Also add recent values
-    //for (const asset of this.assetsById.values()) {
-    //  options.push({
-    //    label: asset.name,
-    //    value: asset.id,
-    //    description: asset.arn,
-    //  });
-    //}
     return options;
   }
 }
 
 export function frameToAssetInfo(res: DescribeAssetResult): AssetInfo {
-  const properties: AssetPropertyInfo[] = JSON.parse(res.properties);
-  const hierarchy: AssetPropertyInfo[] = JSON.parse(res.hierarchies); // has Id, Name
+  let properties: AssetPropertyInfo[] = [];
+  let hierarchy: AssetPropertyInfo[] = [];
+
+  try {
+    properties = JSON.parse(res.properties);
+    hierarchy = JSON.parse(res.hierarchies); // has Id, Name
+  } catch (e) {
+    console.log(res.properties, res.hierarchies);
+    console.error('Error parsing JSON:', e);
+    throw 'Could not parse returned JSON';
+  }
 
   for (const p of properties) {
     p.value = p.Id;
@@ -219,8 +265,10 @@ export function frameToAssetInfo(res: DescribeAssetResult): AssetInfo {
       };
     });
 
+  const { hierarchies: _, ...rest } = res;
+
   return {
-    ...res,
+    ...rest,
     properties: [...options, ...properties],
     hierarchy: hierarchy.map((v) => ({
       label: v.Name,
@@ -229,8 +277,12 @@ export function frameToAssetInfo(res: DescribeAssetResult): AssetInfo {
   };
 }
 
-export function assetSummaryToAssetInfo(res: DataFrameView<AssetSummary>): AssetInfo[] {
-  let results: AssetInfo[] = [];
+export function assetSummaryToAssetInfo(res?: DataFrameView<AssetSummary>): AssetInfo[] {
+  const results: AssetInfo[] = [];
+
+  if (!res) {
+    return results;
+  }
 
   for (const info of res.toArray()) {
     const hierarchy: AssetPropertyInfo[] = JSON.parse(info.hierarchies); // has Id, Name
@@ -247,3 +299,13 @@ export function assetSummaryToAssetInfo(res: DataFrameView<AssetSummary>): Asset
 
   return results;
 }
+
+const getTemplateVariableOptions = (): Array<SelectableValue<string>> => {
+  return getTemplateSrv()
+    .getVariables()
+    .map((variable) => ({
+      label: '${' + (variable.label ?? variable.name) + '}',
+      value: '${' + variable.name + '}',
+      icon: 'arrow-right',
+    }));
+};

@@ -5,21 +5,24 @@ import {
   DataQueryRequest,
   DataFrame,
   MetricFindValue,
+  LoadingState,
 } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
-import { SitewiseCache } from 'sitewiseCache';
 
-import { SitewiseQuery, SitewiseOptions, SitewiseCustomMeta, isPropertyQueryType, SitewiseNextQuery } from './types';
+import { SitewiseCache } from 'sitewiseCache';
+import { SitewiseQuery, SitewiseOptions, isPropertyQueryType, SiteWiseResolution, isListAssetsQuery } from './types';
 import { Observable } from 'rxjs';
-import { getRequestLooper, MultiRequestTracker } from 'requestLooper';
-import { appendMatchingFrames } from 'appendFrames';
+import { tap } from 'rxjs/operators';
 import { frameToMetricFindValues } from 'utils';
-import { SitewiseVariableSupport } from './variables';
+import { SitewiseVariableSupport } from 'variables';
+import { SitewiseQueryPaginator } from 'SiteWiseQueryPaginator';
+import { RelativeRangeCache } from 'RelativeRangeRequestCache/RelativeRangeCache';
 
 export class DataSource extends DataSourceWithBackend<SitewiseQuery, SitewiseOptions> {
   // Easy access for QueryEditor
   readonly options: SitewiseOptions;
   private cache = new Map<string, SitewiseCache>();
+  private relativeRangeCache = new RelativeRangeCache();
 
   constructor(instanceSettings: DataSourceInstanceSettings<SitewiseOptions>) {
     super(instanceSettings);
@@ -57,7 +60,7 @@ export class DataSource extends DataSourceWithBackend<SitewiseQuery, SitewiseOpt
       rangeRaw: options.rangeRaw,
     } as DataQueryRequest<SitewiseQuery>;
 
-    let res: DataQueryResponse;
+    let res: DataQueryResponse | undefined;
 
     try {
       res = await this.query(request).toPromise();
@@ -96,7 +99,7 @@ export class DataSource extends DataSourceWithBackend<SitewiseQuery, SitewiseOpt
     }
     return true; // keep the query
   }
-
+  // returns string that will be shown in the panel header when the panel is collapsed
   getQueryDisplayText(query: SitewiseQuery): string {
     const cache = this.getCache(query.region);
     let txt: string = query.queryType;
@@ -115,6 +118,8 @@ export class DataSource extends DataSourceWithBackend<SitewiseQuery, SitewiseOpt
           txt += ' / ' + query.propertyId;
         }
       }
+    } else if (query.propertyAlias) {
+      txt += ' / ' + query.propertyAlias;
     }
     return txt;
   }
@@ -124,15 +129,21 @@ export class DataSource extends DataSourceWithBackend<SitewiseQuery, SitewiseOpt
    */
   applyTemplateVariables(query: SitewiseQuery, scopedVars: ScopedVars): SitewiseQuery {
     const templateSrv = getTemplateSrv();
-    return {
+    const interpolatedQuery = {
       ...query,
       propertyAlias: templateSrv.replace(query.propertyAlias, scopedVars),
       region: templateSrv.replace(query.region || '', scopedVars),
       propertyId: templateSrv.replace(query.propertyId || '', scopedVars),
-      assetIds: query.assetIds?.flatMap(
-        assetId => templateSrv.replace(assetId, scopedVars, 'csv').split(',')
-      ) ?? []
+      assetId: templateSrv.replace(query.assetId || '', scopedVars),
+      assetIds: query.assetIds?.flatMap((assetId) => templateSrv.replace(assetId, scopedVars, 'csv').split(',')) ?? [],
+      resolution: query.resolution
+        ? (templateSrv.replace(query.resolution, scopedVars) as SiteWiseResolution)
+        : undefined,
     };
+    if (isListAssetsQuery(interpolatedQuery)) {
+      interpolatedQuery.modelId = templateSrv.replace(interpolatedQuery.modelId, scopedVars);
+    }
+    return interpolatedQuery;
   }
 
   runQuery(query: SitewiseQuery, maxDataPoints?: number): Observable<DataQueryResponse> {
@@ -141,55 +152,26 @@ export class DataSource extends DataSourceWithBackend<SitewiseQuery, SitewiseOpt
   }
 
   query(request: DataQueryRequest<SitewiseQuery>): Observable<DataQueryResponse> {
-    return getRequestLooper(request, {
-      // Check for a "nextToken" in the response
-      getNextQueries: (rsp: DataQueryResponse) => {
-        if (rsp.data?.length) {
-          const next: SitewiseNextQuery[] = [];
-          for (const frame of rsp.data as DataFrame[]) {
-            const meta = frame.meta?.custom as SitewiseCustomMeta;
-            if (meta && meta.nextToken) {
-              const query = request.targets.find((t) => t.refId === frame.refId);
-              if (query) {
-                next.push({
-                  ...query,
-                  nextToken: meta.nextToken,
-                });
-              }
+    const cachedInfo = request.range != null ? this.relativeRangeCache.get(request) : undefined;
+
+    return new SitewiseQueryPaginator({
+      request: cachedInfo?.refreshingRequest || request,
+      queryFn: (request: DataQueryRequest<SitewiseQuery>) => {
+        return super.query(request).toPromise();
+      },
+      cachedResponse: cachedInfo?.cachedResponse,
+    })
+      .toObservable()
+      .pipe(
+        // Cache the last (done) response
+        tap({
+          next: (response) => {
+            if (response.state === LoadingState.Done) {
+              this.relativeRangeCache.set(request, response);
             }
-          }
-          if (next.length) {
-            return next;
-          }
-        }
-        return undefined;
-      },
-
-      /**
-       * The original request
-       */
-      query: (request: DataQueryRequest<SitewiseQuery>) => {
-        return super.query(request);
-      },
-
-      /**
-       * Process the results
-       */
-      process: (t: MultiRequestTracker, data: DataFrame[], isLast: boolean) => {
-        if (t.data) {
-          // append rows to fields with the same structure
-          t.data = appendMatchingFrames(t.data, data);
-        } else {
-          t.data = data; // hang on to the results from the last query
-        }
-        return t.data;
-      },
-
-      /**
-       * Callback that gets executed when unsubscribed
-       */
-      onCancel: (tracker: MultiRequestTracker) => {},
-    });
+          },
+        })
+      );
   }
 }
 

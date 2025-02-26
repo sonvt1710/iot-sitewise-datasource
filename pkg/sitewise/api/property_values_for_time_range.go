@@ -17,7 +17,7 @@ func GetAssetPropertyValuesForTimeRange(ctx context.Context, client client.Sitew
 
 		// todo: remove propvals.ResolutionSecond condition once 1s aggregation is supported
 		if propvals.ResolutionRaw == resolution || propvals.ResolutionSecond == resolution {
-			modifiedQuery, history, err := BatchGetAssetPropertyValues(ctx, client, query)
+			modifiedQuery, history, err := GetAssetPropertyValues(ctx, client, query)
 			if err != nil {
 				return modifiedQuery, nil, err
 			}

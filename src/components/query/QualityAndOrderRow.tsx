@@ -9,10 +9,11 @@ import {
   SiteWiseResolution,
   isAssetPropertyInterpolatedQuery,
   SiteWiseResponseFormat,
+  QueryType,
 } from 'types';
-import { InlineField, Select } from '@grafana/ui';
+import { Select } from '@grafana/ui';
 import { SitewiseQueryEditorProps } from './types';
-import { firstLabelWith } from './QueryEditor';
+import { EditorField } from '@grafana/plugin-ui';
 
 type Props = SitewiseQueryEditorProps<
   AssetPropertyValueHistoryQuery | AssetPropertyAggregatesQuery | AssetPropertyInterpolatedQuery
@@ -36,7 +37,6 @@ const interpolatedResolutions: Array<SelectableValue<SiteWiseResolution>> = [
 ];
 
 const qualities: Array<SelectableValue<SiteWiseQuality>> = [
-  { value: SiteWiseQuality.ANY, label: 'ANY' },
   { value: SiteWiseQuality.GOOD, label: 'GOOD' },
   { value: SiteWiseQuality.BAD, label: 'BAD' },
   { value: SiteWiseQuality.UNCERTAIN, label: 'UNCERTAIN' },
@@ -54,94 +54,90 @@ export const FORMAT_OPTIONS: Array<SelectableValue<SiteWiseResponseFormat>> = [
 
 export class QualityAndOrderRow extends PureComponent<Props> {
   onQualityChange = (sel: SelectableValue<SiteWiseQuality>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, quality: sel.value });
-    onRunQuery();
-  };
-
-  onOrderChange = (sel: SelectableValue<SiteWiseTimeOrder>) => {
-    const { onChange, query, onRunQuery } = this.props;
-    onChange({ ...query, timeOrdering: sel.value });
-    onRunQuery();
   };
 
   onResponseFormatChange = (sel: SelectableValue<SiteWiseResponseFormat>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, responseFormat: sel.value });
-    onRunQuery();
   };
 
   onResolutionChange = (sel: SelectableValue<SiteWiseResolution>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, resolution: sel.value });
-    onRunQuery();
   };
 
   onMaxPageAggregations = (event: React.FormEvent<HTMLInputElement>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
 
     onChange({ ...query, maxPageAggregations: +event.currentTarget.value });
-    onRunQuery();
+  };
+
+  timeOrderField = () => {
+    const { onChange, query } = this.props;
+
+    // PropertyInterpolated has no time ordering support
+    if (query.queryType === QueryType.PropertyInterpolated) {
+      return null;
+    }
+
+    const onOrderChange = (sel: SelectableValue<SiteWiseTimeOrder>) => {
+      onChange({ ...query, timeOrdering: sel.value });
+    };
+
+    return (
+      <EditorField label="Time" width={10} htmlFor="time">
+        <Select
+          id="time"
+          aria-label="Time"
+          options={ordering}
+          value={ordering.find((v) => v.value === query.timeOrdering) ?? ordering[0]}
+          onChange={onOrderChange}
+          isSearchable={true}
+          menuPlacement="auto"
+        />
+      </EditorField>
+    );
   };
 
   render() {
     const { query } = this.props;
-
     return (
       <>
-        <div className="gf-form">
-          <InlineField label="Quality" labelWidth={firstLabelWith}>
+        <EditorField label="Quality" width={15} htmlFor="quality">
+          <Select
+            id="quality"
+            aria-label="Quality"
+            options={qualities}
+            value={qualities.find((v) => v.value === query.quality) ?? qualities[0]}
+            onChange={this.onQualityChange}
+            isSearchable={true}
+            menuPlacement="auto"
+          />
+        </EditorField>
+        {this.timeOrderField()}
+        <EditorField label="Format" width={10} htmlFor="format">
+          <Select
+            id="format"
+            aria-label="Format"
+            value={query.responseFormat || SiteWiseResponseFormat.Table}
+            onChange={this.onResponseFormatChange}
+            options={FORMAT_OPTIONS}
+          />
+        </EditorField>
+        {isAssetPropertyInterpolatedQuery(query) && (
+          <EditorField label="Resolution" width={25} htmlFor="resolution">
             <Select
-              width={20}
-              options={qualities}
-              value={qualities.find((v) => v.value === query.quality) ?? qualities[0]}
-              onChange={this.onQualityChange}
-              isSearchable={true}
-              menuPlacement="bottom"
+              id="resolution"
+              aria-label="Resolution"
+              options={interpolatedResolutions}
+              value={interpolatedResolutions.find((v) => v.value === query.resolution) || interpolatedResolutions[0]}
+              onChange={this.onResolutionChange}
+              menuPlacement="auto"
             />
-          </InlineField>
-          <InlineField label="Time" labelWidth={8}>
-            <Select
-              options={ordering}
-              value={ordering.find((v) => v.value === query.timeOrdering) ?? ordering[0]}
-              onChange={this.onOrderChange}
-              isSearchable={true}
-              menuPlacement="bottom"
-            />
-          </InlineField>
-
-          <InlineField label="Format" labelWidth={8}>
-            <Select
-              value={query.responseFormat || SiteWiseResponseFormat.Table}
-              onChange={this.onResponseFormatChange}
-              options={FORMAT_OPTIONS}
-            />
-          </InlineField>
-
-          {isAssetPropertyInterpolatedQuery(query) && (
-            <InlineField label="Resolution" labelWidth={10}>
-              <Select
-                width={18}
-                options={interpolatedResolutions}
-                value={interpolatedResolutions.find((v) => v.value === query.resolution) || interpolatedResolutions[0]}
-                onChange={this.onResolutionChange}
-                menuPlacement="bottom"
-              />
-            </InlineField>
-          )}
-
-          {/*<InlineField label="Pages per Query" labelWidth={8}>*/}
-          {/*  <Input*/}
-          {/*    type="number"*/}
-          {/*    min="0"*/}
-          {/*    value={query.maxPageAggregations ?? 1}*/}
-          {/*    placeholder="enter a number"*/}
-          {/*    onChange={this.onMaxPageAggregations}*/}
-          {/*    width={8}*/}
-          {/*    css=""*/}
-          {/*  />*/}
-          {/*</InlineField>*/}
-        </div>
+          </EditorField>
+        )}
       </>
     );
   }

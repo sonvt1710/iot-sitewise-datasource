@@ -39,7 +39,7 @@ export class AggregatePicker extends PureComponent<Props> {
     this.checkInput();
   }
 
-  componentDidUpdate(prevProps: Props) {
+  componentDidUpdate() {
     this.checkInput();
   }
 
@@ -84,6 +84,8 @@ export class AggregatePicker extends PureComponent<Props> {
     }
     return (
       <Select
+        inputId="aggregate-picker"
+        aria-label="Aggregate picker"
         value={select.current}
         className={className}
         isClearable={!defaultStat}

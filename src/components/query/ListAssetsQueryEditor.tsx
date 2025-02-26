@@ -1,15 +1,12 @@
 import React, { PureComponent } from 'react';
-import { DataFrameView, SelectableValue } from '@grafana/data';
+import { SelectableValue } from '@grafana/data';
 import { ListAssetsQuery } from 'types';
-import { InlineField, Select } from '@grafana/ui';
+import { Select } from '@grafana/ui';
 import { SitewiseQueryEditorProps } from './types';
-import { AssetModelSummary } from 'queryResponseTypes';
-import { firstLabelWith } from './QueryEditor';
-
-type Props = SitewiseQueryEditorProps<ListAssetsQuery>;
+import { EditorField, EditorFieldGroup, EditorRow } from '@grafana/plugin-ui';
 
 interface State {
-  models?: DataFrameView<AssetModelSummary>;
+  models?: SelectableValue<string>[];
 }
 
 const filters = [
@@ -21,39 +18,31 @@ const filters = [
   { label: 'All', value: 'ALL', description: 'The list includes all assets for a given asset model ID' },
 ];
 
-export class ListAssetsQueryEditor extends PureComponent<Props, State> {
+export class ListAssetsQueryEditor extends PureComponent<SitewiseQueryEditorProps<ListAssetsQuery>, State> {
   state: State = {};
 
   async componentDidMount() {
     const { query } = this.props;
     const cache = this.props.datasource.getCache(query.region);
-    const models = await cache.getModels();
+    const models = await cache.getModelsOptions();
     this.setState({ models });
   }
 
   onAssetModelIdChange = (sel: SelectableValue<string>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, modelId: sel.value! });
-    onRunQuery();
   };
 
   onFilterChange = (sel: SelectableValue<string>) => {
-    const { onChange, query, onRunQuery } = this.props;
+    const { onChange, query } = this.props;
     onChange({ ...query, filter: sel.value as 'ALL' | 'TOP_LEVEL' });
-    onRunQuery();
   };
 
   render() {
     const { query } = this.props;
     const { models } = this.state;
-    const modelIds = models
-      ? models.map((m) => ({
-          value: m.id,
-          label: m.name,
-          description: m.description,
-        }))
-      : [];
-    let currentModel = modelIds.find((m) => m.value === query.modelId);
+
+    let currentModel = models?.find((m) => m.value === query.modelId);
     if (query.modelId && !currentModel) {
       currentModel = {
         value: query.modelId,
@@ -63,12 +52,14 @@ export class ListAssetsQueryEditor extends PureComponent<Props, State> {
     }
 
     return (
-      <>
-        <div className="gf-form">
-          <InlineField label="Model ID" labelWidth={firstLabelWith} grow={true}>
+      <EditorRow>
+        <EditorFieldGroup>
+          <EditorField label="Model ID" htmlFor="model" width={30}>
             <Select
+              id="model"
+              aria-label="Model ID"
               isLoading={!models}
-              options={modelIds}
+              options={models}
               value={currentModel}
               onChange={this.onAssetModelIdChange}
               placeholder="Select an asset model id"
@@ -76,22 +67,22 @@ export class ListAssetsQueryEditor extends PureComponent<Props, State> {
               isClearable={true}
               isSearchable={true}
               formatCreateLabel={(txt) => `Model ID: ${txt}`}
-              menuPlacement="bottom"
+              menuPlacement="auto"
             />
-          </InlineField>
-        </div>
-        <div className="gf-form">
-          <InlineField label="Filter" labelWidth={firstLabelWith} grow={true}>
+          </EditorField>
+          <EditorField label="Filter" htmlFor="filter" width={20}>
             <Select
+              id="filter"
+              aria-label="Filter"
               options={filters}
               value={filters.find((v) => v.value === query.filter) || filters[0]}
               onChange={this.onFilterChange}
               placeholder="Select a property"
-              menuPlacement="bottom"
+              menuPlacement="auto"
             />
-          </InlineField>
-        </div>
-      </>
+          </EditorField>
+        </EditorFieldGroup>
+      </EditorRow>
     );
   }
 }

@@ -1,4 +1,5 @@
-import { DataQuery, SelectableValue } from '@grafana/data';
+import { SelectableValue } from '@grafana/data';
+import { DataQuery } from '@grafana/schema';
 import { AwsAuthDataSourceJsonData, AwsAuthDataSourceSecureJsonData } from '@grafana/aws-sdk';
 
 // Matches https://github.com/grafana/iot-sitewise-datasource/blob/main/pkg/models/query.go#L3
@@ -6,11 +7,19 @@ export enum QueryType {
   ListAssetModels = 'ListAssetModels',
   ListAssets = 'ListAssets',
   ListAssociatedAssets = 'ListAssociatedAssets',
+  ListAssetProperties = 'ListAssetProperties',
   DescribeAsset = 'DescribeAsset',
   PropertyValue = 'PropertyValue',
   PropertyValueHistory = 'PropertyValueHistory',
   PropertyAggregate = 'PropertyAggregate',
   PropertyInterpolated = 'PropertyInterpolated',
+  ListTimeSeries = 'ListTimeSeries',
+  ExecuteQuery = 'ExecuteQuery',
+}
+
+export enum QueryEditorMode {
+  Builder = 'builder',
+  Code = 'code',
 }
 
 export enum SiteWiseQuality {
@@ -36,6 +45,7 @@ export enum SiteWiseResolution {
   TenSec = '10s',
   Min = '1m',
   TenMin = '10m',
+  FifteenMin = '15m',
   Hour = '1h',
   TenHour = '10h',
   Day = '1d',
@@ -55,6 +65,12 @@ export interface SitewiseQuery extends DataQuery {
   region?: string; // aws region string
   responseFormat?: SiteWiseResponseFormat;
 
+  // QueryEditor
+  editorMode?: QueryEditorMode;
+
+  // RawQueryEditor
+  rawSQL?: string;
+
   /** @deprecated -- this is migrated to assetIds */
   assetId?: string;
   // One or more assets to filter -- when multiple, they should share the same properties, the batch API will be called
@@ -64,7 +80,9 @@ export interface SitewiseQuery extends DataQuery {
   quality?: SiteWiseQuality;
   resolution?: SiteWiseResolution;
   lastObservation?: boolean;
+  flattenL4e?: boolean;
   maxPageAggregations?: number;
+  clientCache?: boolean;
 }
 
 export interface SitewiseNextQuery extends SitewiseQuery {
@@ -73,6 +91,7 @@ export interface SitewiseNextQuery extends SitewiseQuery {
    * will require multiple pages in order to fulfil the requests
    */
   nextToken?: string;
+  nextTokens?: Record<string, string>;
 }
 
 /**
@@ -103,11 +122,23 @@ export function isListAssetsQuery(q?: SitewiseQuery): q is ListAssetsQuery {
 
 export interface ListAssociatedAssetsQuery extends SitewiseQuery {
   queryType: QueryType.ListAssociatedAssets;
-  hierarchyId?: string; // if empty, will list the parents
+  loadAllChildren?: boolean; // When passed, we will loop through all associated hierarchies, and return children from all.
+  hierarchyId?: string; // if empty and loadAllChildren is false, will list the parents
 }
 
 export function isListAssociatedAssetsQuery(q?: SitewiseQuery): q is ListAssociatedAssetsQuery {
   return q?.queryType === QueryType.ListAssociatedAssets;
+}
+
+/**
+ * {@link http://docs.aws.amazon.com/iot-sitewise/latest/APIReference/API_ListAssetProperties.html}
+ */
+export interface ListAssetPropertiesQuery extends SitewiseQuery {
+  queryType: QueryType.ListAssetProperties;
+}
+
+export function isListAssetPropertiesQuery(q?: SitewiseQuery): q is ListAssetPropertiesQuery {
+  return q?.queryType === QueryType.ListAssetProperties;
 }
 
 /**
@@ -127,6 +158,8 @@ export function isDescribeAssetQuery(q?: SitewiseQuery): q is ListAssetModelsQue
  */
 export interface AssetPropertyValueQuery extends SitewiseQuery {
   queryType: QueryType.PropertyValue;
+
+  flattenL4e?: boolean;
 }
 
 export function isAssetPropertyValueQuery(q?: SitewiseQuery): q is AssetPropertyValueQuery {
@@ -140,6 +173,7 @@ export interface AssetPropertyValueHistoryQuery extends SitewiseQuery {
   queryType: QueryType.PropertyValueHistory;
 
   timeOrdering?: SiteWiseTimeOrder;
+  flattenL4e?: boolean;
 }
 
 export function isAssetPropertyValueHistoryQuery(q?: SitewiseQuery): q is AssetPropertyValueHistoryQuery {
@@ -167,11 +201,25 @@ export function isAssetPropertyAggregatesQuery(q?: SitewiseQuery): q is AssetPro
  */
 export interface AssetPropertyInterpolatedQuery extends SitewiseQuery {
   queryType: QueryType.PropertyInterpolated;
-  timeOrdering?: SiteWiseTimeOrder;
 }
 
 export function isAssetPropertyInterpolatedQuery(q?: SitewiseQuery): q is AssetPropertyInterpolatedQuery {
   return q?.queryType === QueryType.PropertyInterpolated;
+}
+
+/**
+ * {@link https://docs.aws.amazon.com/iot-sitewise/latest/APIReference/API_ListTimeSeries.html}
+ */
+
+export interface ListTimeSeriesQuery extends SitewiseQuery {
+  queryType: QueryType.ListTimeSeries;
+  aliasPrefix?: string;
+  assetId?: string;
+  timeSeriesType?: 'ASSOCIATED' | 'DISASSOCIATED' | 'ALL';
+}
+
+export function isListTimeSeriesQuery(q?: SitewiseQuery): q is ListTimeSeriesQuery {
+  return q?.queryType === QueryType.ListTimeSeries;
 }
 
 export function isPropertyQueryType(queryType?: QueryType): boolean {
@@ -185,6 +233,23 @@ export function isPropertyQueryType(queryType?: QueryType): boolean {
 
 export function shouldShowLastObserved(queryType?: QueryType): boolean {
   return queryType === QueryType.PropertyAggregate || queryType === QueryType.PropertyValueHistory;
+}
+
+export function shouldShowOptionsRow(query: SitewiseQuery, showProp: boolean): boolean {
+  const shouldShowLastObservedSwitch =
+    shouldShowLastObserved(query.queryType) && !Boolean(query.propertyAlias) && showProp;
+  const shouldShowWithPropertyAlias =
+    // shouldn't show the row when querying associated assets with property alias, otherwise show it every time property alias is set
+    query.propertyAlias && !isListAssociatedAssetsQuery(query);
+  return !!(query.propertyId || shouldShowWithPropertyAlias || shouldShowLastObservedSwitch);
+}
+
+export function shouldShowL4eOptions(queryType?: QueryType): boolean {
+  return queryType === QueryType.PropertyValue || queryType === QueryType.PropertyValueHistory;
+}
+
+export function shouldShowQualityAndOrderComponent(queryType?: QueryType): boolean {
+  return queryType !== QueryType.PropertyValue;
 }
 
 // matches native sitewise API with capitals
@@ -215,6 +280,8 @@ export interface AssetInfo {
  */
 export interface SitewiseCustomMeta {
   nextToken?: string;
+
+  entryId?: string;
 
   resolution?: string;
 

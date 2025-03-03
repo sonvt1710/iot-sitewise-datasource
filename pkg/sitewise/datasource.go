@@ -19,6 +19,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const EDGE_REGION string = "Edge"
+
 type clientGetterFunc func(region string) (client client.SitewiseClient, err error)
 type invokerFunc func(ctx context.Context, sw client.SitewiseClient) (framer.Framer, error)
 
@@ -26,7 +28,7 @@ type Datasource struct {
 	GetClient clientGetterFunc
 }
 
-func NewDatasource(settings backend.DataSourceInstanceSettings) (*Datasource, error) {
+func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (*Datasource, error) {
 	cfg := models.AWSSiteWiseDataSourceSetting{}
 
 	err := cfg.Load(settings)
@@ -40,8 +42,9 @@ func NewDatasource(settings backend.DataSourceInstanceSettings) (*Datasource, er
 	}
 
 	sessions := awsds.NewSessionCache()
+	authSettings := awsds.ReadAuthSettings(ctx)
 	clientGetter := func(region string) (swclient client.SitewiseClient, err error) {
-		swclient, err = client.GetClient(region, cfg, sessions.GetSession)
+		swclient, err = client.GetClient(region, cfg, sessions.GetSessionWithAuthSettings, authSettings)
 		return
 	}
 
@@ -75,7 +78,7 @@ func NewDatasource(settings backend.DataSourceInstanceSettings) (*Datasource, er
 			}
 			cfgCopy := cfg
 			mu.Unlock()
-			swclient, err = client.GetClient(region, cfgCopy, sessions.GetSession)
+			swclient, err = client.GetClient(region, cfgCopy, sessions.GetSessionWithAuthSettings, authSettings)
 			return
 		}
 	}
@@ -85,7 +88,7 @@ func NewDatasource(settings backend.DataSourceInstanceSettings) (*Datasource, er
 	}, nil
 }
 
-func (ds *Datasource) invoke(ctx context.Context, req *backend.QueryDataRequest, baseQuery *models.BaseQuery, invoker invokerFunc) (data.Frames, error) {
+func (ds *Datasource) invoke(ctx context.Context, _ *backend.QueryDataRequest, baseQuery *models.BaseQuery, invoker invokerFunc) (data.Frames, error) {
 	sw, err := ds.GetClient(baseQuery.AwsRegion)
 	if err != nil {
 		return nil, err
@@ -123,6 +126,16 @@ func (ds *Datasource) HandleGetAssetPropertyValueHistoryQuery(ctx context.Contex
 		return nil, err
 	}
 
+	// Batch API is not available at the edge
+	if query.BaseQuery.AwsRegion == EDGE_REGION {
+		modifiedQuery, fr, err := api.GetAssetPropertyValues(ctx, sw, *query)
+		if err != nil {
+			return nil, err
+		}
+
+		return frameResponse(ctx, modifiedQuery.BaseQuery, fr, sw)
+	}
+
 	modifiedQuery, fr, err := api.BatchGetAssetPropertyValues(ctx, sw, *query)
 	if err != nil {
 		return nil, err
@@ -137,7 +150,17 @@ func (ds *Datasource) HandleGetAssetPropertyAggregateQuery(ctx context.Context, 
 		return nil, err
 	}
 
-	modifiedQuery, fr, err := api.GetAssetPropertyValuesForTimeRange(ctx, sw, *query)
+	// Batch API is not available at the edge
+	if query.BaseQuery.AwsRegion == EDGE_REGION {
+		modifiedQuery, fr, err := api.GetAssetPropertyValuesForTimeRange(ctx, sw, *query)
+		if err != nil {
+			return nil, err
+		}
+
+		return frameResponse(ctx, modifiedQuery.BaseQuery, fr, sw)
+	}
+
+	modifiedQuery, fr, err := api.BatchGetAssetPropertyValuesForTimeRange(ctx, sw, *query)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +172,16 @@ func (ds *Datasource) HandleGetAssetPropertyValueQuery(ctx context.Context, quer
 	sw, err := ds.GetClient(query.BaseQuery.AwsRegion)
 	if err != nil {
 		return nil, err
+	}
+
+	// Batch API is not available at the edge
+	if query.BaseQuery.AwsRegion == EDGE_REGION {
+		modifiedQuery, fr, err := api.GetAssetPropertyValue(ctx, sw, *query)
+		if err != nil {
+			return nil, err
+		}
+
+		return frameResponse(ctx, modifiedQuery.BaseQuery, fr, sw)
 	}
 
 	modifiedQuery, fr, err := api.BatchGetAssetPropertyValue(ctx, sw, *query)
@@ -177,6 +210,12 @@ func (ds *Datasource) HandleListAssetsQuery(ctx context.Context, req *backend.Qu
 	})
 }
 
+func (ds *Datasource) HandleListTimeSeriesQuery(ctx context.Context, req *backend.QueryDataRequest, query *models.ListTimeSeriesQuery) (data.Frames, error) {
+	return ds.invoke(ctx, req, &query.BaseQuery, func(ctx context.Context, sw client.SitewiseClient) (framer.Framer, error) {
+		return api.ListTimeSeries(ctx, sw, *query)
+	})
+}
+
 func (ds *Datasource) HandleDescribeAssetQuery(ctx context.Context, req *backend.QueryDataRequest, query *models.DescribeAssetQuery) (data.Frames, error) {
 	return ds.invoke(ctx, req, &query.BaseQuery, func(ctx context.Context, sw client.SitewiseClient) (framer.Framer, error) {
 		return api.DescribeAsset(ctx, sw, *query)
@@ -186,5 +225,17 @@ func (ds *Datasource) HandleDescribeAssetQuery(ctx context.Context, req *backend
 func (ds *Datasource) HandleDescribeAssetModelQuery(ctx context.Context, req *backend.QueryDataRequest, query *models.DescribeAssetModelQuery) (data.Frames, error) {
 	return ds.invoke(ctx, req, &query.BaseQuery, func(ctx context.Context, sw client.SitewiseClient) (framer.Framer, error) {
 		return api.DescribeAssetModel(ctx, sw, *query)
+	})
+}
+
+func (ds *Datasource) HandleListAssetPropertiesQuery(ctx context.Context, req *backend.QueryDataRequest, query *models.ListAssetPropertiesQuery) (data.Frames, error) {
+	return ds.invoke(ctx, req, &query.BaseQuery, func(ctx context.Context, sw client.SitewiseClient) (framer.Framer, error) {
+		return api.ListAssetProperties(ctx, sw, *query)
+	})
+}
+
+func (ds *Datasource) HandleExecuteQuery(ctx context.Context, req *backend.QueryDataRequest, query *models.ExecuteQuery) (data.Frames, error) {
+	return ds.invoke(ctx, req, &query.BaseQuery, func(ctx context.Context, sw client.SitewiseClient) (framer.Framer, error) {
+		return api.ExecuteQuery(ctx, sw, *query)
 	})
 }

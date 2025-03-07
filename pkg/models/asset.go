@@ -20,9 +20,17 @@ type ListAssetsQuery struct {
 	Filter  string `json:"filter,omitempty"`
 }
 
+type ListTimeSeriesQuery struct {
+	BaseQuery
+	TimeSeriesType string `json:"timeSeriesType,omitempty"`
+	AssetId        string `json:"assetId,omitempty"`
+	AliasPrefix    string `json:"aliasPrefix,omitempty"`
+}
+
 type ListAssociatedAssetsQuery struct {
 	BaseQuery
-	HierarchyId string `json:"hierarchyId,omitempty"`
+	HierarchyId     string `json:"hierarchyId,omitempty"`
+	LoadAllChildren bool   `json:"loadAllChildren,omitempty"`
 	// TraversalDirection is implied from the existence of HierarchyId
 }
 
@@ -37,6 +45,20 @@ func GetDescribeAssetQuery(dq *backend.DataQuery) (*DescribeAssetQuery, error) {
 
 	// add on the DataQuery params
 	query.QueryType = dq.QueryType
+
+	return query, nil
+}
+
+func GetListAssetPropertiesQuery(dq *backend.DataQuery) (*ListAssetPropertiesQuery, error) {
+	query := &ListAssetPropertiesQuery{}
+	if err := json.Unmarshal(dq.JSON, query); err != nil {
+		return nil, err
+	}
+
+	// AssetId <--> AssetIds backward compatibility
+	query.MigrateAssetId()
+
+	query.QueryType = dq.QueryType
 	return query, nil
 }
 
@@ -48,6 +70,18 @@ func GetListAssetsQuery(dq *backend.DataQuery) (*ListAssetsQuery, error) {
 
 	// AssetId <--> AssetIds backward compatibility
 	query.MigrateAssetId()
+
+	// add on the DataQuery params
+	query.MaxDataPoints = dq.MaxDataPoints
+	query.QueryType = dq.QueryType
+	return query, nil
+}
+
+func GetListTimeSeriesQuery(dq *backend.DataQuery) (*ListTimeSeriesQuery, error) {
+	query := &ListTimeSeriesQuery{}
+	if err := json.Unmarshal(dq.JSON, query); err != nil {
+		return nil, err
+	} 
 
 	// add on the DataQuery params
 	query.MaxDataPoints = dq.MaxDataPoints
